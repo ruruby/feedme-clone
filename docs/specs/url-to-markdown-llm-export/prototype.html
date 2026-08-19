@@ -1,0 +1,450 @@
+<!--
+  prototype shell: the review chrome every prototype starts from.
+
+  Keep this comment in the prototype you grow from here: it is the contract,
+  and later turns work from that file rather than from this one.
+
+  Contract (extend product screens; keep the review shell):
+  - Product:  .sh-stage contains only end-user product UI. Keep review notes,
+               rationale, instructions, and approval controls in conversation.
+  - Screens:  <section data-screen="slug" data-title="Label"> inside .sh-stage.
+               The selector, arrow keys, and #hash routing build themselves.
+               Use one option per product destination or distinct surface,
+               named by its product role. Keep baselines, variants, comparison
+               labels, steps, indexes, and progress out of names and states.
+               Links may use href="#slug".
+  - States:   "Default" is automatic. A screen declares only representative
+               presets in data-states="Empty,Error". Use natural, screen-specific
+               names. Reserve presets for important multi-step results, forced
+               data or errors, or materially different structure; keep one-click
+               and transient states as interactions. Use data-when="Empty" on
+               preset-only elements. Call prototypeShell.setState("Name") on
+               entry and setState("Default") on exit, including when repeated
+               actions cross a preset condition.
+  - Viewport: "vp (m)" cycles full / 390 / 768. The 390 preset is a
+               fixed-height, internally scrolling phone frame. Start a
+               mobile-first prototype by adding class="sh-vp-390" to <body>
+               (or a bootstrap classList.add before the chrome script runs).
+  - Pinning:  keep in-frame bars (tab bars, CTAs) inside the phone with
+               position: sticky; position: fixed pins to the browser window.
+  - Tokens:   replace the project-tokens block with project tokens copied
+               verbatim. Map differing names to --background, --foreground, and
+               --font afterwards; replace network fonts with a system stack and
+               note that substitution. Without a design system, keep this
+               palette as the finished style.
+  - Placeholders: .wf-pic stands in for pictures the prototype has no real
+               files for. Use real text everywhere text belongs.
+
+  - Chrome:   Keep exactly the screen selector, selected-screen state selector,
+               and viewport cycle. Chrome that needs explaining has failed.
+
+  Self-contained by design: no build, no framework, no network.
+
+  Note: project tokens copied verbatim from app/globals.css (oklch, shadcn
+  "neutral" base). Project font is Geist/Inter via next/font (network fonts);
+  substituted here with a system-ui stack.
+-->
+<meta charset="utf-8">
+<title>Prototype — URL to Markdown</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ── project tokens: copied verbatim from app/globals.css ── */
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --radius: 0.625rem;
+    /* mapped for the shell contract */
+    --font: system-ui, -apple-system, "Segoe UI", sans-serif; /* substituted for Geist/Inter (network fonts) */
+  }
+  html.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+  }
+
+  /* ── review chrome (sh-*): keep; extend product styles elsewhere ── */
+  * { box-sizing: border-box }
+  body {
+    margin: 0; padding: 0 0 40px;
+    background: var(--background, #f6f6f6); color: var(--foreground, #3a3a3a);
+    font-family: var(--font, system-ui, sans-serif);
+  }
+  .sh-bar {
+    position: sticky; top: 0; z-index: 999;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; background: #191a1c; color: #d7d7d7;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .sh-bar b, .sh-control-label { color: #8a8f98; font-weight: 500 }
+  .sh-control { display: inline-flex; gap: 5px; align-items: center }
+  .sh-bar button {
+    border: 1px solid #3a3d42; background: none; color: inherit;
+    font: inherit; padding: 2px 9px; border-radius: 99px; cursor: pointer;
+  }
+  .sh-bar select {
+    width: 170px; border: 1px solid #3a3d42; background: #232428; color: inherit;
+    font: inherit; padding: 3px 28px 3px 9px; border-radius: 7px; cursor: pointer;
+    color-scheme: dark;
+  }
+  #sh-screen { width: 190px }
+  .sh-bar button.on { background: #d7d7d7; color: #191a1c; border-color: #d7d7d7 }
+  .sh-spacer { flex: 1 }
+  .sh-stage { max-width: 960px; margin: 0 auto; padding: 12px 16px 0 }
+  [hidden] { display: none !important }
+
+  /* viewport presets */
+  .sh-vp-390 .sh-stage {
+    max-width: 390px; background: var(--background, #f6f6f6);
+    border: 10px solid #191a1c; border-radius: 28px;
+    padding: 16px 12px; height: min(844px, calc(100dvh - 52px));
+    overflow-y: auto; margin-top: 12px;
+  }
+  .sh-vp-768 .sh-stage {
+    max-width: 768px; border: 1px solid #c4c4c4; border-radius: 12px;
+    padding: 16px; margin-top: 12px;
+  }
+
+  /* placeholders */
+  .wf-pic  { border-radius: 4px; background:
+             repeating-linear-gradient(45deg, #e9e9e9, #e9e9e9 6px, #f2f2f2 6px, #f2f2f2 12px) }
+
+  /* ── product styles ── */
+  .app-shell { max-width: 640px; margin: 0 auto; }
+  .app-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 0;
+  }
+  .app-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 8px; border: none;
+    background: transparent; color: var(--foreground); cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--accent); }
+  .icon-btn svg { width: 17px; height: 17px; }
+
+  .url-form { display: flex; gap: 8px; }
+  .url-field { position: relative; flex: 1; }
+  .url-input {
+    width: 100%; height: 38px; border-radius: 8px; border: 1px solid var(--input);
+    background: var(--background); color: var(--foreground);
+    padding: 0 34px 0 12px; font-size: 13.5px; outline: none;
+  }
+  .url-input:focus { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 40%, transparent); }
+  .url-clear {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 22px; height: 22px; border: none; background: none; color: var(--muted-foreground);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 6px;
+  }
+  .url-clear:hover { color: var(--foreground); background: var(--accent); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; height: 38px;
+    padding: 0 14px; border-radius: 8px; border: 1px solid transparent;
+    font-size: 13.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
+  }
+  .btn svg { width: 15px; height: 15px; }
+  .btn-primary { background: var(--primary); color: var(--primary-foreground); }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-outline { background: var(--background); color: var(--foreground); border-color: var(--border); }
+  .btn-outline:hover { background: var(--accent); }
+  .btn-secondary { background: var(--secondary); color: var(--secondary-foreground); }
+  .btn-secondary:hover { opacity: 0.85; }
+
+  .error-text { color: var(--destructive); font-size: 13px; margin: 14px 0 0; }
+
+  .loading-box {
+    display: flex; align-items: center; gap: 8px; margin-top: 24px;
+    color: var(--muted-foreground); font-size: 13.5px;
+  }
+  .spinner {
+    width: 15px; height: 15px; border-radius: 50%;
+    border: 2px solid var(--border); border-top-color: var(--foreground);
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .result { margin-top: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .result-header h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .result-header p { margin: 0; font-size: 13px; color: var(--muted-foreground); }
+
+  .md-box {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+    color: var(--card-foreground); padding: 16px 18px; font-size: 13.5px; line-height: 1.75;
+  }
+  .md-box h3 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
+  .md-box p { margin: 0 0 10px; }
+  .md-box p:last-child { margin-bottom: 0; }
+  .md-box code { background: var(--muted); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  .md-box blockquote { margin: 0 0 10px; padding-left: 12px; border-left: 2px solid var(--border); color: var(--muted-foreground); }
+
+  .prompt-block { display: flex; flex-direction: column; gap: 8px; }
+  .prompt-label { font-size: 11.5px; font-weight: 500; color: var(--muted-foreground); }
+  .prompt-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    border: 1px solid var(--border); background: var(--background); color: var(--foreground);
+    border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+  }
+  .chip.selected { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
+  .prompt-custom {
+    width: 100%; border: 1px solid var(--input); border-radius: 8px; background: var(--background);
+    color: var(--foreground); padding: 8px 10px; font-size: 13px; font-family: inherit; resize: vertical;
+  }
+
+  .export-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .copied-toast {
+    font-size: 12px; color: var(--muted-foreground); margin-top: -4px;
+  }
+</style>
+
+<header class="sh-bar">
+  <b>proto</b>
+  <label class="sh-control"><span class="sh-control-label">screen</span><select id="sh-screen"></select></label>
+  <span class="sh-spacer"></span>
+  <label class="sh-control"><span class="sh-control-label">state</span><select id="sh-state"></select></label>
+  <button id="sh-vp">vp: full (m)</button>
+</header>
+
+<main class="sh-stage">
+  <section data-screen="converter" data-title="URL 변환기" data-states="Loading,Error,Result">
+    <div class="app-shell">
+      <div class="app-header">
+        <p class="app-title">URL → Markdown</p>
+        <button class="icon-btn" id="theme-toggle" aria-label="다크 모드 전환">
+          <svg id="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+          <svg id="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        </button>
+      </div>
+
+      <form class="url-form" id="url-form">
+        <div class="url-field">
+          <input class="url-input" id="url-input" type="url" placeholder="https://example.com/article" value="https://stephango.com/til/reading-lists">
+          <button type="button" class="url-clear" id="url-clear" aria-label="지우기">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <button type="submit" class="btn btn-primary" id="submit-btn">변환</button>
+      </form>
+
+      <p class="error-text" data-when="Error">페이지를 가져오지 못했습니다 (403). 로그인이 필요하거나 접근이 차단된 페이지일 수 있습니다.</p>
+
+      <div class="loading-box" data-when="Loading">
+        <span class="spinner"></span> 변환 중…
+      </div>
+
+      <div class="result" data-when="Result">
+        <div class="result-header">
+          <h2>읽기 목록을 관리하는 법</h2>
+          <p>스테파노 · stephango.com</p>
+        </div>
+
+        <div class="md-box">
+          <h3>왜 읽기 목록이 실패하는가</h3>
+          <p>대부분의 "나중에 읽기" 목록은 무덤이 된다. 저장하는 행위 자체가 이미 소비했다는 착각을 주기 때문이다. 실제로 다시 열어보는 비율은 5%도 되지 않는다는 조사 결과도 있다.</p>
+          <blockquote>중요한 건 저장 방법이 아니라 <code>다시 만나는 방법</code>이다.</blockquote>
+          <p>대신 매주 15분씩 목록을 훑어보며 세 개만 남기고 나머지는 과감히 지우는 루틴을 권한다. 이렇게 하면 큐가 항상 가볍게 유지되고, 정말 읽고 싶은 글만 남는다.</p>
+        </div>
+
+        <div class="prompt-block">
+          <span class="prompt-label">프롬프트 (ChatGPT·Claude로 열기에만 적용)</span>
+          <div class="prompt-row" id="prompt-row">
+            <button type="button" class="chip" data-prompt="summarize">요약해줘</button>
+            <button type="button" class="chip" data-prompt="translate">한국어로 번역해줘</button>
+            <button type="button" class="chip" data-prompt="simplify">쉽게 설명해줘</button>
+            <button type="button" class="chip" data-prompt="custom">직접 입력</button>
+          </div>
+          <textarea class="prompt-custom" id="prompt-custom" rows="2" placeholder="프롬프트를 직접 입력하세요" hidden></textarea>
+        </div>
+
+        <div class="export-row">
+          <button type="button" class="btn btn-outline" id="btn-copy">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            복사하기
+          </button>
+          <button type="button" class="btn btn-outline" id="btn-download">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>
+            .md 다운로드
+          </button>
+          <button type="button" class="btn btn-secondary" id="btn-chatgpt">ChatGPT로 열기</button>
+          <button type="button" class="btn btn-secondary" id="btn-claude">Claude로 열기</button>
+        </div>
+        <p class="copied-toast" id="copied-toast" hidden></p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  const stage = document.querySelector('.sh-stage');
+  const screens = [...stage.querySelectorAll('[data-screen]')];
+  const screenSelect = document.getElementById('sh-screen');
+  const stateSelect = document.getElementById('sh-state');
+  const vpBtn = document.getElementById('sh-vp');
+  let current = null;
+  let currentStates = [];
+
+  screens.forEach(s => {
+    const option = document.createElement('option');
+    option.textContent = s.dataset.title || s.dataset.screen;
+    option.value = s.dataset.screen;
+    screenSelect.append(option);
+  });
+  screenSelect.onchange = () => show(screenSelect.value);
+
+  function show(slug) {
+    current = screens.find(s => s.dataset.screen === slug) || screens[0];
+    screens.forEach(s => s.hidden = s !== current);
+    screenSelect.value = current.dataset.screen;
+    history.replaceState(null, '', '#' + current.dataset.screen);
+    buildStates();
+  }
+
+  function buildStates() {
+    const declared = (current.dataset.states || '').split(',').map(x => x.trim()).filter(Boolean);
+    currentStates = ['Default', ...declared.filter(name => name !== 'Default')];
+    stateSelect.innerHTML = '';
+    currentStates.forEach(name => {
+      const option = document.createElement('option');
+      option.textContent = name;
+      option.value = name;
+      stateSelect.append(option);
+    });
+    applyState('Default');
+  }
+
+  function applyState(name) {
+    const active = currentStates.includes(name) ? name : 'Default';
+    current.querySelectorAll('[data-when]').forEach(el => {
+      el.hidden = !el.dataset.when.split(',').map(x => x.trim()).includes(active);
+    });
+    stateSelect.value = active;
+  }
+  stateSelect.onchange = () => applyState(stateSelect.value);
+
+  window.prototypeShell = {
+    showScreen: show,
+    setState: applyState,
+    getScreen: () => current?.dataset.screen,
+    getState: () => stateSelect.value
+  };
+
+  const VPS = ['full', '390', '768'];
+  let vp = VPS.find(v => document.body.classList.contains('sh-vp-' + v)) || 'full';
+  function applyVp() {
+    VPS.forEach(v => document.body.classList.toggle('sh-vp-' + v, v === vp && v !== 'full'));
+    vpBtn.textContent = 'vp: ' + vp + ' (m)';
+    vpBtn.classList.toggle('on', vp !== 'full');
+  }
+  vpBtn.onclick = () => { vp = VPS[(VPS.indexOf(vp) + 1) % VPS.length]; applyVp(); };
+  applyVp();
+
+  addEventListener('keydown', e => {
+    if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    const i = screens.indexOf(current);
+    if (e.key === 'ArrowRight') show(screens[(i + 1) % screens.length].dataset.screen);
+    if (e.key === 'ArrowLeft') show(screens[(i - 1 + screens.length) % screens.length].dataset.screen);
+    if (e.key === 'm') vpBtn.click();
+  });
+
+  addEventListener('hashchange', () => show(location.hash.slice(1)));
+  show(location.hash.slice(1));
+
+  // ── product interactions ──
+
+  // dark mode toggle
+  const themeToggle = document.getElementById('theme-toggle');
+  const moonIcon = document.getElementById('theme-icon-moon');
+  const sunIcon = document.getElementById('theme-icon-sun');
+  themeToggle.onclick = () => {
+    const isDark = document.documentElement.classList.toggle('dark');
+    moonIcon.hidden = isDark;
+    sunIcon.hidden = !isDark;
+  };
+
+  // url input + clear + submit → drives Loading → Result/Error
+  const urlInput = document.getElementById('url-input');
+  const urlClear = document.getElementById('url-clear');
+  const urlForm = document.getElementById('url-form');
+  const submitBtn = document.getElementById('submit-btn');
+
+  urlClear.onclick = () => {
+    urlInput.value = '';
+    prototypeShell.setState('Default');
+  };
+
+  urlForm.onsubmit = (e) => {
+    e.preventDefault();
+    if (!urlInput.value.trim()) return;
+    prototypeShell.setState('Loading');
+    submitBtn.disabled = true;
+    setTimeout(() => {
+      submitBtn.disabled = false;
+      // demo: URLs containing "blocked" show the error state
+      if (urlInput.value.includes('blocked')) {
+        prototypeShell.setState('Error');
+      } else {
+        prototypeShell.setState('Result');
+      }
+    }, 900);
+  };
+
+  // prompt presets
+  const promptRow = document.getElementById('prompt-row');
+  const promptCustom = document.getElementById('prompt-custom');
+  let selectedPrompt = null;
+  promptRow.querySelectorAll('.chip').forEach(chip => {
+    chip.onclick = () => {
+      const value = chip.dataset.prompt;
+      if (selectedPrompt === value) {
+        selectedPrompt = null;
+        chip.classList.remove('selected');
+      } else {
+        promptRow.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+        chip.classList.add('selected');
+        selectedPrompt = value;
+      }
+      promptCustom.hidden = selectedPrompt !== 'custom';
+    };
+  });
+
+  // export actions — visual feedback only, no real clipboard/file IO in the prototype
+  const toast = document.getElementById('copied-toast');
+  function flash(message) {
+    toast.textContent = message;
+    toast.hidden = false;
+    clearTimeout(flash._t);
+    flash._t = setTimeout(() => { toast.hidden = true; }, 1600);
+  }
+  document.getElementById('btn-copy').onclick = () => flash('Markdown이 클립보드에 복사되었습니다.');
+  document.getElementById('btn-download').onclick = () => flash('읽기-목록을-관리하는-법.md 다운로드됨');
+  document.getElementById('btn-chatgpt').onclick = () => flash('클립보드에 복사됨 — 새 탭에서 ChatGPT를 열고 붙여넣으세요.');
+  document.getElementById('btn-claude').onclick = () => flash('클립보드에 복사됨 — 새 탭에서 Claude를 열고 붙여넣으세요.');
+</script>
